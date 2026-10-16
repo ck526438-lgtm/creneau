@@ -1,0 +1,106 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id              String         @id @default(cuid())
+  email           String         @unique
+  passwordHash    String
+  name            String
+  headline        String         @default("")
+  slug            String         @unique
+  timezone        String         @default("Europe/Paris")
+  brandColor      String         @default("#4f46e5")
+  logoUrl         String?
+  bio             String         @default("")
+  plan            String         @default("FREE")
+  remindersOn     Boolean        @default(true)
+  createdAt       DateTime       @default(now())
+  services        Service[]
+  availability    Availability[]
+  busySlots       BusySlot[]
+  bookings        Booking[]
+  passwordResets  PasswordReset[]
+}
+
+model PasswordReset {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+model Service {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  slug            String
+  title           String
+  description     String   @default("")
+  durationMin     Int      @default(30)
+  bufferBeforeMin Int      @default(0)
+  bufferAfterMin  Int      @default(0)
+  colorIndex      Int      @default(0)
+  locationKind    String   @default("VIDEO")
+  locationValue   String   @default("")
+  priceCents      Int      @default(0)
+  active          Boolean  @default(true)
+  position        Int      @default(0)
+  bookings        Booking[]
+
+  @@unique([userId, slug])
+}
+
+model Availability {
+  id       String @id @default(cuid())
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weekday  Int
+  startMin Int
+  endMin   Int
+
+  @@index([userId, weekday])
+}
+
+model BusySlot {
+  id       String   @id @default(cuid())
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label    String   @default("Indisponible")
+  startsAt DateTime
+  endsAt   DateTime
+
+  @@index([userId, startsAt])
+}
+
+model Booking {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  serviceId    String
+  service      Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  visitorName  String
+  visitorEmail String
+  visitorPhone String   @default("")
+  visitorNotes String   @default("")
+  visitorTz    String   @default("")
+  startsAt     DateTime
+  endsAt       DateTime
+  status       String   @default("CONFIRMED")
+  cancelToken  String   @unique @default(cuid())
+  remindSentAt DateTime?
+  createdAt    DateTime @default(now())
+
+  @@index([userId, startsAt])
+  @@index([serviceId, startsAt])
+}
