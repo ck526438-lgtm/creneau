@@ -7,8 +7,12 @@ const COOKIE_NAME = 'creneau_session';
 const MAX_AGE_DAYS = 30;
 
 function secretKey() {
-  const secret = process.env.SESSION_SECRET || 'dev-secret-please-replace-in-production-0123456789';
-  return new TextEncoder().encode(secret);
+  const secret = process.env.SESSION_SECRET ?? '';
+  if (secret.length >= 32) return new TextEncoder().encode(secret);
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('SESSION_SECRET : définir une chaîne aléatoire d’au moins 32 caractères.');
+  }
+  return new TextEncoder().encode('dev-secret-please-replace-in-production-0123456789');
 }
 
 export function hashPassword(password: string) {

@@ -61,24 +61,94 @@ verrouillée. Le champ `plan` de l'utilisateur est réservé pour plus tard et n
 CGV et l'image Open Graph disent la même chose (« 0 €, offre de lancement ») — ne les contredisez pas en
 ajoutant un prix sans brancher le paiement.
 
-## Déploiement
+## Déploiement sur Railway
 
-SQLite impose un disque persistant : Railway, Fly.io, un VPS, ou Docker (le `Dockerfile` pousse le
-schéma au démarrage, monte `/data` pour la base et déclare `/api/health` en healthcheck).
+SQLite impose un disque persistant : ni Vercel ni serverless. Railway convient (image Docker + volume).
+
+**Coût réel** : l'essai Railway donne 5 $ de crédits pendant 30 jours, sans carte ; le plan Trial comme le
+plan Free incluent **0,5 Go de volume** (largement assez pour cette base SQLite) et limitent le service à
+1 vCPU / 0,5 Go de RAM, ce que `next start` occupe sans problème. Ensuite, comptez 1-5 $/mois selon l'usage
+(≈2-4 €/mois pour cette app), le volume au-delà de 0,5 Go étant facturé 0,15 $/Go/mois. Pour rester à 0 €,
+Fly.io (volume + free allowance) ou un VPS mutualisé font le même travail.
+
+### 1. Créer le service
+
+Depuis le dashboard : **New project → Deploy from GitHub repo**, repo `ck526438-lgtm/creneau`, branche
+`main` (installer l'App Railway sur le repo quand il le demande). Chaque push redéploie.
+
+Ou depuis le CLI :
+
+```bash
+npm i -g @railway/cli
+railway login
+railway init                 # ou railway link sur un projet déjà créé
+railway up                   # construit et déploie le dossier courant
+railway domain               # génère https://<nom>.up.railway.com
+```
+
+Railway lit `railway.json` : builder `DOCKERFILE`, healthcheck `/api/health`, redémarrage `ON_FAILURE`.
+
+### 2. Attacher le volume — obligatoire
+
+Onglet **Volumes** du service → nouveau volume, mount path **exactement `/data`**. Sans ça, la base est
+effacée à chaque redéploiement. Le conteneur y écrit `dev.db` (`DATABASE_URL=file:/data/dev.db`, déjà la
+valeur par défaut de l'image).
+
+### 3. Variables du service
+
+| Variable | Valeur | Rôle |
+|---|---|---|
+| `SESSION_SECRET` | `openssl rand -hex 32` | signé les sessions ; l'app refuse de démarrer sans en production |
+| `APP_URL` | `https://<domaine>` | liens d'annulation et de report dans les emails |
+| `CRON_SECRET` | une autre chaîne aléatoire | protège `GET /api/cron/reminders` |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `MAIL_FROM` | Brevo, Resend… | sinon les emails sont écrits dans `outbox/`, un dossier éphémère du conteneur : personne ne les reçoit |
+| `SEED_DEMO` | `1`, seulement au premier boot | crée `demo@creneau.app` / `demo1234` et la page `/b/demo-cabinet` ; à retirer ensuite (mot de passe public) |
+| `DATABASE_URL` | `file:/data/dev.db` | utile uniquement si vous changez le mount path |
+
+### 4. Domaine public puis redéploiement
+
+Settings → Networking → **Generate Domain**, recopier l'URL dans `APP_URL`, redéployer (les emails déjà
+envoyés gardent l'ancienne URL).
+
+### 5. Vérifier
+
+```bash
+curl -s https://<domaine>/api/health
+# {"ok":true,"db":"up","email":"smtp"}   → "outbox" signifie SMTP absent
+```
+
+Puis réserver un créneau sur `/b/demo-cabinet` (ou son propre lien après inscription) : confirmation par
+email, deuxième clic rejeté par l'anti double-booking, annulation et report possibles via `/r/<token>`.
+
+### 6. Rappels J-1
+
+`.github/workflows/reminders.yml` appelle `/api/cron/reminders` à chaque heure. Pour l'activer : repo →
+Settings → Secrets and variables → Actions → secret `CRON_SECRET` + variable `APP_URL`, onglet Actions →
+« rappels J-1 » → *Run workflow* pour tester. Sans cron déclenché, aucun rappel ne part.
+
+### 7. Sauvegardes
+
+Le volume survvit aux redéploiements mais pas à la suppression du projet : snapshot **Backup/Restore** du
+volume dans le dashboard, ou sauvegarde quotidienne de `/data/dev.db` (une seule base fichier).
+
+## Déploiement Docker (VPS, Fly.io, machine locale)
+
+Le `Dockerfile` pousse le schéma au démarrage, attend un disque persistant sur `/data`, écoute sur
+`$PORT` (défaut 3000) et déclare `/api/health` en healthcheck.
 
 ```bash
 docker build -t creneau .
-docker run -p 3000:3000 -v creneau-data:/data \
+docker run -d --name creneau -p 3000:3000 -v creneau-data:/data \
   -e SESSION_SECRET="$(openssl rand -hex 32)" -e APP_URL=https://mondomaine.fr \
-  -e SMTP_HOST=... -e SMTP_USER=... -e SMTP_PASS=... -e CRON_SECRET=... \
+  -e CRON_SECRET="$(openssl rand -hex 16)" \
+  -e SMTP_HOST=... -e SMTP_USER=... -e SMTP_PASS=... -e MAIL_FROM=... \
   creneau
 ```
 
-Sauvegarde : une seule base fichier, donc `sqlite3 /data/dev.db ".backup /backups/creneau-$(date +%F).db"`
-dans une tâche quotidienne suffit (à activer avant le premier client payant).
+Sauvegarde : `sqlite3 /data/dev.db ".backup /backups/creneau-$(date +%F).db"` dans une tâche quotidienne.
 
-Sur Vercel : remplacer SQLite par Postgres/Turso (le schéma Prisma est déjà prêt, il suffit de
-changer le `provider` et de pousser).
+Postgres/Turso : le schéma Prisma est presque transposable, mais il faudra changer le `provider`, remplacer
+les requêtes SQLite et revoir `DATABASE_URL` — à prévoir seulement si vous sortez du disque persistant.
 
 ## Mise en ligne gratuite (0 €/mois ou presque)
 
