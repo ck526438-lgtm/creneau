@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Creneau — hors ligne</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px;
+         font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background: #f2f6f1; color: #26372b; }
+  .card { max-width: 380px; width: 100%; background: #fff; border: 1px solid #e2eae0; border-radius: 20px;
+          padding: 32px 26px; text-align: center; box-shadow: 0 10px 30px rgba(38,55,43,.08); }
+  img { width: 72px; height: 72px; border-radius: 18px; }
+  h1 { font-size: 20px; margin: 18px 0 8px; }
+  p { font-size: 15px; line-height: 1.55; color: #4d674a; margin: 0 0 22px; }
+  button { width: 100%; border: 0; border-radius: 12px; padding: 14px; font-size: 16px; font-weight: 600;
+           background: #39503a; color: #fff; cursor: pointer; }
+  button:disabled { opacity: .6; }
+  small { display: block; margin-top: 14px; color: #8ba583; font-size: 12px; }
+</style>
+</head>
+<body>
+  <main class="card">
+    <img src="icon.png" alt="" />
+    <h1 id="title">Pas de connexion</h1>
+    <p id="text">Creneau a besoin d’internet pour afficher votre agenda. Vérifiez votre connexion (données mobiles ou Wi-Fi), puis réessayez.</p>
+    <button id="retry" type="button">Réessayer</button>
+    <small id="server"></small>
+  </main>
+  <script src="config.js"></script>
+  <script>
+    (function () {
+      var url = (window.CRENEAU_URL || '').replace(/\/$/, '');
+      var btn = document.getElementById('retry');
+      document.getElementById('server').textContent = url ? url.replace(/^https?:\/\//, '') : '';
+      if (!url) {
+        document.getElementById('title').textContent = 'Serveur non configuré';
+        document.getElementById('text').textContent =
+          'Cette version de l’appli a été construite sans adresse de serveur (variable APP_URL). Installez la version officielle.';
+        btn.style.display = 'none';
+        return;
+      }
+      function go() {
+        btn.disabled = true;
+        btn.textContent = 'Connexion…';
+        // Page locale → serveur distant : requête « no-cors » (réponse opaque), elle échoue seulement
+        // s'il n'y a pas de réseau ou si le serveur est injoignable.
+        fetch(url + '/api/health?t=' + Date.now(), { mode: 'no-cors', cache: 'no-store' })
+          .then(function () { location.replace(url + '/dashboard'); })
+          .catch(function () { btn.disabled = false; btn.textContent = 'Réessayer'; });
+      }
+      btn.addEventListener('click', go);
+      window.addEventListener('online', go);
+    })();
+  </script>
+</body>
+</html>

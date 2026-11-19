@@ -58,6 +58,42 @@ que `CRON_SECRET` n'est pas défini : il n'est jamais ouvert à tous.
 | Sonde de déploiement | `/api/health` |
 | Pages légales (modèles à compléter) | `/legal/mentions`, `/legal/confidentialite`, `/legal/cgv` |
 
+## Applis Android et Windows
+
+`apps/android` (Capacitor) et `apps/desktop` (Electron) sont des applis natives qui ouvrent le serveur Creneau
+en ligne : mêmes comptes, mêmes rendez-vous, et chaque mise à jour du site est visible dans les applis sans
+les republier. Sans réseau, elles affichent un écran « Pas de connexion » avec un bouton Réessayer. Les liens
+WhatsApp, email et téléphone s'ouvrent dans les applis du système ; les fichiers `.ics` et l'export de données
+se téléchargent normalement. Page publique de téléchargement : `/applis` (aussi installable en PWA sur iPhone).
+
+Elles sont construites par GitHub Actions (`.github/workflows/apps.yml`) :
+
+1. **Variable `APP_URL`** (repo → Settings → Secrets and variables → Actions → *Variables*) : l'adresse du
+   serveur, ex. `https://creneau.up.railway.app`. C'est la même variable que pour les rappels J-1.
+2. **Publier une version** : `git tag v1.0.0 && git push origin v1.0.0`. Le workflow construit
+   `Creneau.apk`, `Creneau-Setup.exe` et `Creneau-Portable.exe` et les attache à une release GitHub ; les
+   boutons de `/applis` pointent vers `…/releases/latest/download/…` et suivent toujours la dernière version.
+3. Chaque push sur `main` touchant `apps/` produit aussi les fichiers (onglet Actions → *Artifacts*), sans release.
+
+**Signature Android (fortement conseillée avant de distribuer)** : sans clé, l'APK est signé avec une clé de
+debug différente à chaque build, et vos utilisateurs devront désinstaller l'appli pour la mettre à jour. Créez
+une clé une seule fois et gardez-la précieusement :
+
+```bash
+keytool -genkeypair -v -keystore creneau-release.jks -alias creneau -keyalg RSA -keysize 2048 -validity 10000
+base64 -w0 creneau-release.jks   # → secret ANDROID_KEYSTORE_BASE64
+```
+
+Secrets à ajouter : `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`creneau`),
+`ANDROID_KEY_PASSWORD`. Le workflow produit alors un APK release signé et un `Creneau.aab` pour le Play Store.
+
+**Windows** : l'installateur n'est pas signé (un certificat de signature de code coûte ~100-300 €/an), donc
+SmartScreen affiche un avertissement au premier lancement ; la page `/applis` explique comment passer outre.
+
+Icônes : `apps/assets/` (remplacez `icon.png`, 1024×1024, pour changer l'icône des deux applis).
+
+Développement local : `cd apps/desktop && npm install && APP_URL=http://localhost:3000 npm start`.
+
 ## Modèle économique : gratuit
 
 Aucune facturation n'est branchée : pas de Stripe, pas de moyen de paiement collecté, aucune fonctionnalité

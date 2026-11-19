@@ -49,6 +49,16 @@ export default async function DashboardLayout({ children }: { children: React.Re
               Toutes les fonctions sont incluses, sans carte bancaire.
             </p>
           </div>
+          <Link
+            href="/applis"
+            className="mt-3 flex items-center gap-2.5 rounded-xl border border-ink-200 bg-white p-3 text-[12px] text-ink-600 transition hover:text-ink-900"
+          >
+            <img src="/app-icon-192.png" alt="" width={28} height={28} className="rounded-lg" />
+            <span>
+              <span className="block font-semibold text-ink-800">Applis Android et Windows</span>
+              Votre agenda partout
+            </span>
+          </Link>
           <div className="mt-6 border-t border-ink-200 pt-5 text-[13px] text-ink-500">
             <p className="truncate font-medium text-ink-800">{user.name}</p>
             <p className="truncate">{user.email}</p>
@@ -71,6 +81,15 @@ export default async function DashboardLayout({ children }: { children: React.Re
               <Logo size={28} className="shadow-sm ring-1 ring-black/5" />
               Creneau
             </Link>
+            <form
+              action={async () => {
+                'use server';
+                await destroySession();
+                redirect('/login');
+              }}
+            >
+              <button className="btn-ghost px-2 py-1 text-[13px]">Se déconnecter</button>
+            </form>
           </div>
           <div className="mb-6 flex flex-wrap gap-1.5 lg:hidden">
             {NAV.map((item) => (
