@@ -5,6 +5,7 @@ import { db } from '@/lib/db';
 import { currentUser, destroySession, verifyPassword } from '@/lib/auth';
 import { cancellationMail, sendMail } from '@/lib/mail';
 import { formatRange } from '@/lib/time';
+import { visitorZone } from '@/lib/bookings';
 
 export type AccountState = { error?: string };
 
@@ -33,10 +34,11 @@ export async function deleteAccountAction(_prev: AccountState, formData: FormDat
       to: booking.visitorEmail,
       ...cancellationMail({
         brandColor: user.brandColor,
-        visitorName: booking.visitorName,
+        greeting: booking.visitorName,
         serviceTitle: booking.service.title,
-        when: formatRange(booking.startsAt, booking.endsAt, booking.visitorTz || user.timezone),
+        when: formatRange(booking.startsAt, booking.endsAt, visitorZone(booking, user)),
         hostName: user.name,
+        cancelledBy: user.name,
       }),
     });
   }

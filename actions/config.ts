@@ -4,7 +4,8 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { requireUser } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { slugify } from '@/lib/constants';
+import { CURRENCIES, parsePrice, slugify } from '@/lib/constants';
+import { HORIZON_LIMIT_DAYS, NOTICE_LIMIT_MIN } from '@/lib/slots';
 import { wallToUtc } from '@/lib/time';
 
 export type SaveState = { error?: string; saved?: boolean; id?: string };
@@ -20,6 +21,7 @@ const serviceSchema = z.object({
   locationValue: z.string().trim().max(300).default(''),
   active: z.coerce.boolean().default(true),
   colorIndex: z.coerce.number().int().min(0).max(5).default(0),
+  price: z.string().trim().max(20).default(''),
 });
 
 export async function saveServiceAction(input: z.input<typeof serviceSchema>): Promise<SaveState> {
@@ -28,7 +30,12 @@ export async function saveServiceAction(input: z.input<typeof serviceSchema>): P
     return { error: parsed.error.issues[0]?.message ?? 'Formulaire incomplet.' };
   }
   const user = await requireUser();
-  const data = parsed.data;
+  const { price, ...fields } = parsed.data;
+  const priceCents = parsePrice(price);
+  if (Number.isNaN(priceCents) || priceCents < 0 || priceCents > 100_000_000_00) {
+    return { error: 'Prix invalide : saisissez un montant comme 15000 ou 49,90.' };
+  }
+  const data = { ...fields, priceCents };
   const baseSlug = slugify(data.title) || 'prestation';
 
   try {
@@ -142,6 +149,10 @@ const profileSchema = z.object({
   brandColor: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/),
   bio: z.string().trim().max(300).default(''),
   remindersOn: z.coerce.boolean().default(true),
+  currency: z.enum(CURRENCIES.map((c) => c.code) as [string, ...string[]]),
+  minNoticeMin: z.coerce.number().int().min(0).max(NOTICE_LIMIT_MIN),
+  maxDaysAhead: z.coerce.number().int().min(1).max(HORIZON_LIMIT_DAYS),
+  requirePhone: z.coerce.boolean().default(false),
 });
 
 export async function saveProfileAction(input: z.input<typeof profileSchema>): Promise<SaveState> {

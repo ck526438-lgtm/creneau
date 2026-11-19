@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { saveProfileAction, type SaveState } from '@/actions/config';
+import { CURRENCIES, HORIZON_OPTIONS, NOTICE_OPTIONS } from '@/lib/constants';
 
 type Draft = {
   name: string;
@@ -12,6 +13,10 @@ type Draft = {
   brandColor: string;
   bio: string;
   remindersOn: boolean;
+  currency: string;
+  minNoticeMin: number;
+  maxDaysAhead: number;
+  requirePhone: boolean;
 };
 
 const SWATCHES = ['#4f46e5', '#0ea5e9', '#059669', '#d97706', '#db2777', '#7c3aed', '#111827'];
@@ -78,7 +83,7 @@ export default function ProfileForm({ initial, zones }: { initial: Draft; zones:
             <select className="field" value={draft.timezone} onChange={(e) => set('timezone', e.target.value)}>
               {zones.map((z) => (
                 <option key={z} value={z}>
-                  {z.replace('_', ' ')}
+                  {z.replace(/_/g, ' ')}
                 </option>
               ))}
             </select>
@@ -106,6 +111,64 @@ export default function ProfileForm({ initial, zones }: { initial: Draft; zones:
             </div>
           </div>
         </div>
+
+        <div className="border-t border-ink-200 pt-5">
+          <p className="text-[15px] font-semibold text-ink-900">Règles de réservation</p>
+          <p className="mt-1 text-[13px] text-ink-500">S’appliquent à toutes vos prestations.</p>
+        </div>
+
+        <div className="grid gap-5 sm:grid-cols-2">
+          <div>
+            <label className="label">Délai minimum avant un RDV</label>
+            <select
+              className="field"
+              value={draft.minNoticeMin}
+              onChange={(e) => set('minNoticeMin', Number(e.target.value))}
+            >
+              {NOTICE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1.5 text-[12px] text-ink-500">Évite les réservations de dernière minute.</p>
+          </div>
+          <div>
+            <label className="label">Réservable jusqu’à</label>
+            <select
+              className="field"
+              value={draft.maxDaysAhead}
+              onChange={(e) => set('maxDaysAhead', Number(e.target.value))}
+            >
+              {HORIZON_OPTIONS.map((d) => (
+                <option key={d} value={d}>
+                  {d} jours à l’avance
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label className="label">Devise des prix</label>
+          <select className="field" value={draft.currency} onChange={(e) => set('currency', e.target.value)}>
+            {CURRENCIES.map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.code} — {c.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <label className="flex items-center gap-2.5 text-[14px] text-ink-700">
+          <input
+            type="checkbox"
+            checked={draft.requirePhone}
+            onChange={(e) => set('requirePhone', e.target.checked)}
+            className="h-4 w-4 rounded border-ink-300"
+          />
+          Téléphone obligatoire pour réserver (pratique pour joindre vos clients sur WhatsApp)
+        </label>
 
         <label className="flex items-center gap-2.5 text-[14px] text-ink-700">
           <input

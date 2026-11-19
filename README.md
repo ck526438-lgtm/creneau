@@ -17,10 +17,13 @@ Compte de démo : `demo@creneau.app` / `demo1234` — page publique `http://loca
 ## Contrôles
 
 ```bash
-npx tsx scripts/check.ts  # 18 vérifications : fuseaux/DST, buffers, anti double-booking, annulation…
+npx tsx scripts/check.ts  # 29 vérifications : fuseaux/DST, buffers, réservations simultanées, délai de
+                          # prévenance, horizon, téléphone obligatoire, RDV passés, devises (FCFA…), WhatsApp
 npx tsc --noEmit
 npm run build
 ```
+
+Le workflow `.github/workflows/ci.yml` lance ces trois contrôles à chaque push et pull request.
 
 ## Emails
 
@@ -36,7 +39,8 @@ MAIL_FROM="Creneau <no-reply@mondomaine.fr>"
 ```
 
 Les rappels J-1 partent via l'endpoint `GET /api/cron/reminders` (à déclencher une fois par heure
-par un cron externe, avec `Authorization: Bearer <CRON_SECRET>`).
+par un cron externe, avec `Authorization: Bearer <CRON_SECRET>`). En production, l'endpoint répond 503 tant
+que `CRON_SECRET` n'est pas défini : il n'est jamais ouvert à tous.
 
 ## Parcourir le produit
 
@@ -53,6 +57,42 @@ par un cron externe, avec `Authorization: Bearer <CRON_SECRET>`).
 | Sitemap, robots, image sociale | `/sitemap.xml`, `/robots.txt`, `/opengraph-image` |
 | Sonde de déploiement | `/api/health` |
 | Pages légales (modèles à compléter) | `/legal/mentions`, `/legal/confidentialite`, `/legal/cgv` |
+
+## Applis Android et Windows
+
+`apps/android` (Capacitor) et `apps/desktop` (Electron) sont des applis natives qui ouvrent le serveur Creneau
+en ligne : mêmes comptes, mêmes rendez-vous, et chaque mise à jour du site est visible dans les applis sans
+les republier. Sans réseau, elles affichent un écran « Pas de connexion » avec un bouton Réessayer. Les liens
+WhatsApp, email et téléphone s'ouvrent dans les applis du système ; les fichiers `.ics` et l'export de données
+se téléchargent normalement. Page publique de téléchargement : `/applis` (aussi installable en PWA sur iPhone).
+
+Elles sont construites par GitHub Actions (`.github/workflows/apps.yml`) :
+
+1. **Variable `APP_URL`** (repo → Settings → Secrets and variables → Actions → *Variables*) : l'adresse du
+   serveur, ex. `https://creneau.up.railway.app`. C'est la même variable que pour les rappels J-1.
+2. **Publier une version** : `git tag v1.0.0 && git push origin v1.0.0`. Le workflow construit
+   `Creneau.apk`, `Creneau-Setup.exe` et `Creneau-Portable.exe` et les attache à une release GitHub ; les
+   boutons de `/applis` pointent vers `…/releases/latest/download/…` et suivent toujours la dernière version.
+3. Chaque push sur `main` touchant `apps/` produit aussi les fichiers (onglet Actions → *Artifacts*), sans release.
+
+**Signature Android (fortement conseillée avant de distribuer)** : sans clé, l'APK est signé avec une clé de
+debug différente à chaque build, et vos utilisateurs devront désinstaller l'appli pour la mettre à jour. Créez
+une clé une seule fois et gardez-la précieusement :
+
+```bash
+keytool -genkeypair -v -keystore creneau-release.jks -alias creneau -keyalg RSA -keysize 2048 -validity 10000
+base64 -w0 creneau-release.jks   # → secret ANDROID_KEYSTORE_BASE64
+```
+
+Secrets à ajouter : `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`creneau`),
+`ANDROID_KEY_PASSWORD`. Le workflow produit alors un APK release signé et un `Creneau.aab` pour le Play Store.
+
+**Windows** : l'installateur n'est pas signé (un certificat de signature de code coûte ~100-300 €/an), donc
+SmartScreen affiche un avertissement au premier lancement ; la page `/applis` explique comment passer outre.
+
+Icônes : `apps/assets/` (remplacez `icon.png`, 1024×1024, pour changer l'icône des deux applis).
+
+Développement local : `cd apps/desktop && npm install && APP_URL=http://localhost:3000 npm start`.
 
 ## Modèle économique : gratuit
 
@@ -100,7 +140,7 @@ valeur par défaut de l'image).
 |---|---|---|
 | `SESSION_SECRET` | `openssl rand -hex 32` | signé les sessions ; l'app refuse de démarrer sans en production |
 | `APP_URL` | `https://<domaine>` | liens d'annulation et de report dans les emails |
-| `CRON_SECRET` | une autre chaîne aléatoire | protège `GET /api/cron/reminders` |
+| `CRON_SECRET` | une autre chaîne aléatoire | protège `GET /api/cron/reminders` (obligatoire : sans lui, pas de rappels) |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `MAIL_FROM` | Brevo, Resend… | sinon les emails sont écrits dans `outbox/`, un dossier éphémère du conteneur : personne ne les reçoit |
 | `SEED_DEMO` | `1`, seulement au premier boot | crée `demo@creneau.app` / `demo1234` et la page `/b/demo-cabinet` ; à retirer ensuite (mot de passe public) |
 | `DATABASE_URL` | `file:/data/dev.db` | utile uniquement si vous changez le mount path |
@@ -180,4 +220,9 @@ Pour héberger sans payer dès le départ :
 | Anti double-booking | revalidation serveur à chaque réservation + marge tampon |
 | Blocages | plages indisponibles (congés, formation) qui retirent les créneaux |
 | Automatisation | email de confirmation visiteur, notification hôte, rappel J-1, lien d'annulation et de report, export .ics |
-| Compte | inscription, connexion, session signée, mot de passe oublié / réinitialisation |
+| Prix et devises | prix affiché par prestation, en FCFA (XOF/XAF), €, dirham, dinar, CHF, CAD, USD… ; devise proposée selon le fuseau à l'inscription ; paiement hors ligne |
+| Règles de réservation | délai minimum avant un RDV (0 à 48 h), horizon (7 à 365 jours), téléphone obligatoire |
+| WhatsApp | bouton « Envoyer sur WhatsApp » pour partager son lien ; bouton WhatsApp sur chaque RDV dont le numéro est au format international |
+| Démarrage | guide en 4 étapes sur l'agenda jusqu'à la première réservation |
+| Compte | inscription (fuseau détecté automatiquement), connexion, session signée, mot de passe oublié / réinitialisation, changement de mot de passe qui déconnecte les autres appareils |
+| Sécurité | réservations sérialisées par agenda (deux clients ne peuvent pas prendre le même créneau), validation serveur des formulaires, limitation de débit, en-têtes anti-clickjacking (la page `/b/…` reste intégrable en iframe), jetons de gestion jamais transmis en Referer |

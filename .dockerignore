@@ -12,3 +12,5 @@ prisma/dev.db-journal
 *.log
 tsconfig.tsbuildinfo
 .DS_Store
+apps
+.github

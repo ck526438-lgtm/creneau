@@ -53,7 +53,7 @@ export default async function ServicesPage() {
                     <p className="truncate text-[15px] font-semibold text-ink-900">{s.title}</p>
                     <p className="truncate text-[13px] text-ink-600">
                       {s.durationMin} min · {locationLabel(s.locationKind)} ·{' '}
-                      {priceLabel(s.priceCents)}
+                      {priceLabel(s.priceCents, user.currency)}
                     </p>
                   </div>
                 </div>

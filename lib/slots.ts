@@ -3,8 +3,12 @@ import { addDaysToWallDate, utcToWall, wallToUtc } from './time';
 
 export type Slot = { startsAt: Date; endsAt: Date };
 
+/** Valeurs par défaut ; chaque hôte peut les régler (User.maxDaysAhead / User.minNoticeMin). */
 export const MAX_DAYS_AHEAD = 60;
 export const MIN_LEAD_MIN = 60;
+/** Bornes acceptées pour les réglages de l'hôte. */
+export const HORIZON_LIMIT_DAYS = 365;
+export const NOTICE_LIMIT_MIN = 14 * 24 * 60;
 export const MAX_SLOTS_PER_DAY = 40;
 
 type Rule = Pick<Availability, 'weekday' | 'startMin' | 'endMin'>;
@@ -36,6 +40,8 @@ export type GenerateInput = {
   busy: Pick<BusySlot, 'startsAt' | 'endsAt'>[];
   now?: Date;
   daysAhead?: number;
+  /** délai de prévenance en minutes (défaut 60) */
+  minNoticeMin?: number;
 };
 
 /**
@@ -44,12 +50,13 @@ export type GenerateInput = {
  */
 export function generateSlots(input: GenerateInput): Map<string, Slot[]> {
   const now = input.now ?? new Date();
-  const daysAhead = Math.min(input.daysAhead ?? MAX_DAYS_AHEAD, MAX_DAYS_AHEAD);
+  const daysAhead = Math.max(1, Math.min(input.daysAhead ?? MAX_DAYS_AHEAD, HORIZON_LIMIT_DAYS));
+  const notice = Math.max(0, Math.min(input.minNoticeMin ?? MIN_LEAD_MIN, NOTICE_LIMIT_MIN));
   const duration = Math.max(5, input.service.durationMin);
   const before = input.service.bufferBeforeMin * 60_000;
   const after = input.service.bufferAfterMin * 60_000;
   const occupied = occupiedWindows(input.bookings, input.busy, input.service);
-  const leadCutoff = now.getTime() + MIN_LEAD_MIN * 60_000;
+  const leadCutoff = now.getTime() + notice * 60_000;
   const today = utcToWall(now, input.timezone);
   const result = new Map<string, Slot[]>();
 

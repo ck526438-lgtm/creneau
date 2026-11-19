@@ -20,10 +20,10 @@ const STEPS = [
 
 const FEATURES = [
   ['Fuseaux automatiques', 'Vos horaires s’affichent dans le temps local du client, même à l’international.'],
-  ['Tampons intelligents', 'Gardez 15 minutes entre deux RDV pour souffler, sans le demander deux fois.'],
+  ['Pensé pour WhatsApp', 'Envoyez votre lien en un clic et recontactez chaque client sur WhatsApp depuis l’agenda.'],
   ['Agenda verrouillable', 'Bloquez une plage (vacances, réunion) : les créneaux disparaissent instantanément.'],
   ['Rappels automatiques', 'Un email de rappel la veille divise généralement les oublis par deux.'],
-  ['Export .ics', 'Chaque RDV part dans Google Agenda, Apple Calendar ou Outlook en un clic.'],
+  ['Prix dans votre devise', 'FCFA, euros, dirhams… Le client voit le tarif avant de réserver, vous encaissez comme d’habitude.'],
   ['Page à votre marque', 'Couleur, accroche, bio : la page de réservation ressemble à votre cabinet.'],
 ];
 
@@ -316,6 +316,9 @@ export default function Home() {
             </Link>
             <Link href="/b/demo-cabinet" className="transition hover:text-ink-900">
               Démo
+            </Link>
+            <Link href="/applis" className="transition hover:text-ink-900">
+              Applis Android et Windows
             </Link>
           </div>
           <div className="flex w-full flex-wrap gap-4 border-t border-ink-100 pt-4 text-[12px] text-ink-400">

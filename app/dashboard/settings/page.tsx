@@ -2,6 +2,7 @@ import { requireUser } from '@/lib/auth';
 import { db } from '@/lib/db';
 import ProfileForm from '@/components/ProfileForm';
 import AccountDanger from '@/components/AccountDanger';
+import PasswordForm from '@/components/PasswordForm';
 import { timeZones } from '@/lib/constants';
 
 export const dynamic = 'force-dynamic';
@@ -15,7 +16,7 @@ export default async function SettingsPage() {
     <div>
       <h1 className="text-2xl font-bold tracking-tight text-ink-900">Réglages</h1>
       <p className="mt-1 mb-6 text-[14px] text-ink-600">
-        Votre identité sur la page de réservation, votre lien public et votre fuseau horaire.
+        Votre identité sur la page de réservation, votre lien public, vos règles de réservation et votre sécurité.
       </p>
       <ProfileForm
         zones={timeZones()}
@@ -27,8 +28,13 @@ export default async function SettingsPage() {
           brandColor: user.brandColor,
           bio: user.bio,
           remindersOn: user.remindersOn,
+          currency: user.currency,
+          minNoticeMin: user.minNoticeMin,
+          maxDaysAhead: user.maxDaysAhead,
+          requirePhone: user.requirePhone,
         }}
       />
+      <PasswordForm />
       <AccountDanger upcoming={upcoming} />
     </div>
   );

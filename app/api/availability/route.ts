@@ -49,6 +49,8 @@ export async function GET(request: NextRequest) {
     rules: bundle.rules,
     bookings: bookings.filter((b) => b.id !== ignoreId),
     busy,
+    minNoticeMin: bundle.user.minNoticeMin,
+    daysAhead: bundle.user.maxDaysAhead,
   });
 
   const slots: { startsAt: string; endsAt: string }[] = [];

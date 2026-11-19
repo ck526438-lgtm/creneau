@@ -8,3 +8,5 @@ outbox
 *.log
 .DS_Store
 tsconfig.tsbuildinfo
+/dev.db*
+*.db-journal

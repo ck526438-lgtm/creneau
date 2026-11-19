@@ -20,6 +20,16 @@ model User {
   bio             String         @default("")
   plan            String         @default("FREE")
   remindersOn     Boolean        @default(true)
+  /// Devise des prix affichés (ISO 4217 : EUR, XOF, XAF, MAD…)
+  currency        String         @default("EUR")
+  /// Délai minimal entre la réservation et le début du RDV
+  minNoticeMin    Int            @default(60)
+  /// Jusqu'à combien de jours à l'avance on peut réserver
+  maxDaysAhead    Int            @default(60)
+  /// Téléphone obligatoire sur le formulaire de réservation
+  requirePhone    Boolean        @default(false)
+  /// Incrémenté à chaque changement de mot de passe : invalide les sessions ouvertes
+  sessionVersion  Int            @default(0)
   createdAt       DateTime       @default(now())
   services        Service[]
   availability    Availability[]

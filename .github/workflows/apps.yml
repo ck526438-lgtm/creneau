@@ -1,0 +1,144 @@
+name: Applis Android et Windows
+
+# APK Android + installateur Windows, qui ouvrent le serveur Creneau défini par la variable APP_URL
+# (Settings → Secrets and variables → Actions → Variables). Un tag vX.Y.Z publie une release GitHub
+# avec des liens de téléchargement stables (…/releases/latest/download/Creneau.apk).
+
+on:
+  push:
+    tags: ['v*']
+    branches: [main]
+    paths: ['apps/**', '.github/workflows/apps.yml']
+  pull_request:
+    paths: ['apps/**', '.github/workflows/apps.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # Builds de test (pull request sans variable) : adresse factice, l'appli affiche « Pas de connexion ».
+  APP_URL: ${{ vars.APP_URL || 'https://creneau.invalid' }}
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - name: Adresse du serveur obligatoire pour une release
+        if: startsWith(github.ref, 'refs/tags/v') && vars.APP_URL == ''
+        run: |
+          echo "::error::Définissez la variable APP_URL (ex. https://creneau.up.railway.app) avant de publier une release."
+          exit 1
+      - id: v
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then v="${GITHUB_REF#refs/tags/v}"; else v="1.0.${{ github.run_number }}"; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Version : $v — serveur : $APP_URL"
+
+  android:
+    needs: guard
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/android
+    env:
+      VERSION_NAME: ${{ needs.guard.outputs.version }}
+      VERSION_CODE: ${{ github.run_number }}
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      # Le SDK Android est préinstallé sur ubuntu-latest (ANDROID_HOME) ; Gradle complète ce qui manque.
+      - run: npm ci --no-audit --no-fund
+      - name: Projet natif (Capacitor)
+        run: |
+          npm run prepare-web
+          npx cap add android
+          cp native/MainActivity.java android/app/src/main/java/app/creneau/android/MainActivity.java
+      - name: Icônes et écran de démarrage
+        run: |
+          mkdir -p assets
+          cp ../assets/icon.png assets/icon-only.png
+          cp ../assets/icon-foreground.png assets/icon-foreground.png
+          cp ../assets/icon-background.png assets/icon-background.png
+          cp ../assets/splash.png assets/splash.png
+          cp ../assets/splash.png assets/splash-dark.png
+          npx capacitor-assets generate --android
+      - name: Version et signature
+        run: |
+          bash scripts/configure-gradle.sh
+          npx cap sync android
+      - name: Compilation
+        working-directory: apps/android/android
+        run: |
+          chmod +x gradlew
+          mkdir -p ../out
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            ./gradlew --no-daemon assembleRelease bundleRelease
+            cp app/build/outputs/apk/release/app-release.apk ../out/Creneau.apk
+            cp app/build/outputs/bundle/release/app-release.aab ../out/Creneau.aab
+          else
+            ./gradlew --no-daemon assembleDebug
+            cp app/build/outputs/apk/debug/app-debug.apk ../out/Creneau.apk
+          fi
+          ls -la ../out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: creneau-android
+          path: apps/android/out/*
+
+  windows:
+    needs: guard
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - name: Version
+        shell: bash
+        run: npm version "${{ needs.guard.outputs.version }}" --no-git-tag-version --allow-same-version
+      - name: Installateur et version portable
+        run: npm run dist
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: creneau-windows
+          path: |
+            apps/desktop/dist/Creneau-Setup.exe
+            apps/desktop/dist/Creneau-Portable.exe
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [android, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Creneau ${{ github.ref_name }}
+          body: |
+            Applis Creneau — connectées à ${{ vars.APP_URL }}
+
+            - **Android** : `Creneau.apk` (autoriser « sources inconnues » à l’installation)
+            - **Windows** : `Creneau-Setup.exe` (installateur) ou `Creneau-Portable.exe` (sans installation)
+          files: out/*

@@ -1,0 +1,42 @@
+{
+  "name": "creneau-desktop",
+  "productName": "Creneau",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Creneau pour Windows — votre agenda de rendez-vous en ligne",
+  "author": "Creneau",
+  "main": "main.js",
+  "scripts": {
+    "prepare-web": "node scripts/prepare.mjs",
+    "start": "npm run prepare-web && electron .",
+    "dist": "npm run prepare-web && electron-builder --win --publish never"
+  },
+  "devDependencies": {
+    "electron": "^39.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "app.creneau.desktop",
+    "productName": "Creneau",
+    "copyright": "Creneau",
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["main.js", "web/**/*", "package.json"],
+    "win": {
+      "icon": "build/icon.png",
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Creneau",
+      "artifactName": "Creneau-Setup.${ext}"
+    },
+    "portable": { "artifactName": "Creneau-Portable.${ext}" }
+  }
+}

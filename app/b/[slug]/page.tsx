@@ -55,6 +55,8 @@ export default async function PublicBookingPage(props: Props) {
         bio: user.bio,
         brandColor: user.brandColor,
         timezone: user.timezone,
+        currency: user.currency,
+        requirePhone: user.requirePhone,
       }}
       services={user.services.map((s) => ({
         id: s.id,

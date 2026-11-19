@@ -130,17 +130,48 @@ export function hostNotificationMail(params: {
 
 export function cancellationMail(params: {
   brandColor: string;
-  visitorName: string;
+  /** destinataire : client ou hôte */
+  greeting: string;
   serviceTitle: string;
   when: string;
   hostName: string;
+  /** « Awa Koné », « vous »… */
+  cancelledBy: string;
+  /** lien pour réserver un autre créneau (email client) */
+  rebookUrl?: string;
 }) {
   const subject = `RDV annulé : ${params.serviceTitle}`;
   const html = layout(
     `Rendez-vous annulé`,
-    `<p>Bonjour ${escapeHtml(params.visitorName)},</p>
-     <p>Le rendez-vous <strong>${escapeHtml(params.serviceTitle)}</strong> prévu le <strong>${escapeHtml(params.when)}</strong> avec ${escapeHtml(params.hostName)} a été annulé.</p>
-     <p style="color:#6b7280;font-size:13px">Si ce n'est pas vous, contactez ${escapeHtml(params.hostName)}.</p>`,
+    `<p>Bonjour ${escapeHtml(params.greeting)},</p>
+     <p>Le rendez-vous <strong>${escapeHtml(params.serviceTitle)}</strong> prévu le <strong>${escapeHtml(params.when)}</strong> a été annulé par ${escapeHtml(params.cancelledBy)}.</p>
+     ${
+       params.rebookUrl
+         ? `<p><a href="${params.rebookUrl}" style="display:inline-block;background:${params.brandColor};color:#fff;text-decoration:none;padding:10px 16px;border-radius:10px;font-weight:600">Choisir un autre créneau</a></p>
+     <p style="color:#6b7280;font-size:13px">Une question ? Contactez directement ${escapeHtml(params.hostName)}.</p>`
+         : `<p style="color:#6b7280;font-size:13px">Le créneau est de nouveau disponible sur votre page de réservation.</p>`
+     }`,
+    params.brandColor,
+  );
+  return { subject, html };
+}
+
+export function hostRescheduleMail(params: {
+  brandColor: string;
+  visitorName: string;
+  serviceTitle: string;
+  before: string;
+  after: string;
+}) {
+  const subject = `RDV déplacé : ${params.visitorName} — ${params.serviceTitle}`;
+  const html = layout(
+    'Rendez-vous reprogrammé',
+    `<p><strong>${escapeHtml(params.visitorName)}</strong> a déplacé son rendez-vous <strong>${escapeHtml(params.serviceTitle)}</strong>.</p>
+     <table style="width:100%;border-collapse:collapse;margin:16px 0">
+       <tr><td style="padding:8px 0;color:#6b7280;width:110px">Avant</td><td style="padding:8px 0;text-decoration:line-through;color:#8a9099">${escapeHtml(params.before)}</td></tr>
+       <tr><td style="padding:8px 0;color:#6b7280">Désormais</td><td style="padding:8px 0"><strong>${escapeHtml(params.after)}</strong></td></tr>
+     </table>
+     <p style="color:#6b7280;font-size:13px">Votre agenda Creneau est déjà à jour.</p>`,
     params.brandColor,
   );
   return { subject, html };
@@ -171,13 +202,15 @@ export function reminderMail(params: {
   when: string;
   location: string;
   hostName: string;
+  manageUrl: string;
 }) {
-  const subject = `Rappel de rendez-vous dans 24h`;
+  const subject = `Rappel : ${params.serviceTitle} demain`;
   const html = layout(
     `Votre rendez-vous approche`,
     `<p>Bonjour ${escapeHtml(params.visitorName)},</p>
      <p>Rappel : <strong>${escapeHtml(params.serviceTitle)}</strong> avec ${escapeHtml(params.hostName)} le <strong>${escapeHtml(params.when)}</strong>.</p>
-     <p>Lieu : ${escapeHtml(params.location)}</p>`,
+     <p>Lieu : ${escapeHtml(params.location)}</p>
+     <p style="color:#6b7280;font-size:13px">Un empêchement ? <a href="${params.manageUrl}">Annuler ou reprogrammer</a> pour libérer le créneau.</p>`,
     params.brandColor,
   );
   return { subject, html };
