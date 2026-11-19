@@ -2,7 +2,9 @@ import Link from 'next/link';
 import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
 import { formatWall, utcToWall, tzAbbrev } from '@/lib/time';
-import { locationLabel, SERVICE_COLORS } from '@/lib/constants';
+import { locationLabel, SERVICE_COLORS, whatsappLink } from '@/lib/constants';
+import OnboardingChecklist from '@/components/OnboardingChecklist';
+import { appUrl } from '@/lib/bookings';
 import { hostCancelAction } from '@/actions/booking';
 import CancelBookingButton from '@/components/CancelBookingButton';
 
@@ -16,7 +18,7 @@ function dayKey(d: Date, tz: string) {
 export default async function AgendaPage() {
   const user = await requireUser();
   const now = new Date();
-  const [upcoming, services] = await Promise.all([
+  const [upcoming, services, everBooked, activeServices] = await Promise.all([
     db.booking.findMany({
       where: { userId: user.id, status: { not: 'CANCELLED' }, endsAt: { gte: now } },
       include: { service: true },
@@ -24,6 +26,11 @@ export default async function AgendaPage() {
       take: 60,
     }),
     db.service.count({ where: { userId: user.id } }),
+    db.booking.count({ where: { userId: user.id } }),
+    db.service.findMany({
+      where: { userId: user.id, active: true },
+      select: { title: true, priceCents: true, description: true },
+    }),
   ]);
 
   const todayKey = dayKey(now, user.timezone);
@@ -49,7 +56,21 @@ export default async function AgendaPage() {
         </Link>
       </div>
 
-      {upcoming.length === 0 && (
+      {everBooked === 0 && (
+        <OnboardingChecklist
+          slug={user.slug}
+          profileDone={Boolean(user.headline || user.bio)}
+          servicesDone={
+            activeServices.length > 1 ||
+            activeServices.some((s) => s.priceCents > 0 || s.title !== 'Appel découverte')
+          }
+          hasActiveService={activeServices.length > 0}
+          shareUrl={`${appUrl()}/b/${user.slug}`}
+          hostName={user.name}
+        />
+      )}
+
+      {upcoming.length === 0 && everBooked > 0 && (
         <div className="card p-8 text-center">
           <p className="text-[15px] font-semibold text-ink-900">Aucun rendez-vous pour l’instant</p>
           <p className="mx-auto mt-2 max-w-md text-[14px] leading-relaxed text-ink-600">
@@ -127,6 +148,22 @@ export default async function AgendaPage() {
                           {b.visitorPhone}
                         </a>
                       )}
+                      {(() => {
+                        const wa = whatsappLink(
+                          b.visitorPhone,
+                          `Bonjour ${b.visitorName}, c’est ${user.name} au sujet de votre rendez-vous « ${b.service.title} » du ${formatWall(new Date(b.startsAt), user.timezone, { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}.`,
+                        );
+                        return wa ? (
+                          <a
+                            href={wa}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="rounded-lg bg-emerald-50 px-2 py-1 font-medium text-emerald-700 hover:bg-emerald-100"
+                          >
+                            WhatsApp
+                          </a>
+                        ) : null;
+                      })()}
                       <a href={`/api/ics/${b.id}`} className="btn-ghost px-2 py-1 text-[13px]">
                         .ics
                       </a>

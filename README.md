@@ -17,10 +17,13 @@ Compte de démo : `demo@creneau.app` / `demo1234` — page publique `http://loca
 ## Contrôles
 
 ```bash
-npx tsx scripts/check.ts  # 18 vérifications : fuseaux/DST, buffers, anti double-booking, annulation…
+npx tsx scripts/check.ts  # 29 vérifications : fuseaux/DST, buffers, réservations simultanées, délai de
+                          # prévenance, horizon, téléphone obligatoire, RDV passés, devises (FCFA…), WhatsApp
 npx tsc --noEmit
 npm run build
 ```
+
+Le workflow `.github/workflows/ci.yml` lance ces trois contrôles à chaque push et pull request.
 
 ## Emails
 
@@ -36,7 +39,8 @@ MAIL_FROM="Creneau <no-reply@mondomaine.fr>"
 ```
 
 Les rappels J-1 partent via l'endpoint `GET /api/cron/reminders` (à déclencher une fois par heure
-par un cron externe, avec `Authorization: Bearer <CRON_SECRET>`).
+par un cron externe, avec `Authorization: Bearer <CRON_SECRET>`). En production, l'endpoint répond 503 tant
+que `CRON_SECRET` n'est pas défini : il n'est jamais ouvert à tous.
 
 ## Parcourir le produit
 
@@ -100,7 +104,7 @@ valeur par défaut de l'image).
 |---|---|---|
 | `SESSION_SECRET` | `openssl rand -hex 32` | signé les sessions ; l'app refuse de démarrer sans en production |
 | `APP_URL` | `https://<domaine>` | liens d'annulation et de report dans les emails |
-| `CRON_SECRET` | une autre chaîne aléatoire | protège `GET /api/cron/reminders` |
+| `CRON_SECRET` | une autre chaîne aléatoire | protège `GET /api/cron/reminders` (obligatoire : sans lui, pas de rappels) |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `MAIL_FROM` | Brevo, Resend… | sinon les emails sont écrits dans `outbox/`, un dossier éphémère du conteneur : personne ne les reçoit |
 | `SEED_DEMO` | `1`, seulement au premier boot | crée `demo@creneau.app` / `demo1234` et la page `/b/demo-cabinet` ; à retirer ensuite (mot de passe public) |
 | `DATABASE_URL` | `file:/data/dev.db` | utile uniquement si vous changez le mount path |
@@ -180,4 +184,9 @@ Pour héberger sans payer dès le départ :
 | Anti double-booking | revalidation serveur à chaque réservation + marge tampon |
 | Blocages | plages indisponibles (congés, formation) qui retirent les créneaux |
 | Automatisation | email de confirmation visiteur, notification hôte, rappel J-1, lien d'annulation et de report, export .ics |
-| Compte | inscription, connexion, session signée, mot de passe oublié / réinitialisation |
+| Prix et devises | prix affiché par prestation, en FCFA (XOF/XAF), €, dirham, dinar, CHF, CAD, USD… ; devise proposée selon le fuseau à l'inscription ; paiement hors ligne |
+| Règles de réservation | délai minimum avant un RDV (0 à 48 h), horizon (7 à 365 jours), téléphone obligatoire |
+| WhatsApp | bouton « Envoyer sur WhatsApp » pour partager son lien ; bouton WhatsApp sur chaque RDV dont le numéro est au format international |
+| Démarrage | guide en 4 étapes sur l'agenda jusqu'à la première réservation |
+| Compte | inscription (fuseau détecté automatiquement), connexion, session signée, mot de passe oublié / réinitialisation, changement de mot de passe qui déconnecte les autres appareils |
+| Sécurité | réservations sérialisées par agenda (deux clients ne peuvent pas prendre le même créneau), validation serveur des formulaires, limitation de débit, en-têtes anti-clickjacking (la page `/b/…` reste intégrable en iframe), jetons de gestion jamais transmis en Referer |

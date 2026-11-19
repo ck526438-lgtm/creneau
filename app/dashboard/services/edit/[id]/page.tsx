@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
 import ServiceForm from '@/components/ServiceForm';
+import { priceInput } from '@/lib/constants';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,7 +33,9 @@ export default async function EditServicePage({ params }: { params: Promise<{ id
           locationValue: service.locationValue,
           active: service.active,
           colorIndex: service.colorIndex,
+          price: priceInput(service.priceCents),
         }}
+        currency={user.currency}
       />
     </div>
   );

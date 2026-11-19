@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { db } from '@/lib/db';
-import { formatRange, formatWall, isValidTimeZone } from '@/lib/time';
+import { formatRange, isValidTimeZone } from '@/lib/time';
 import { locationText } from '@/lib/bookings';
 import { cancelByTokenAction } from '@/actions/booking';
 import CancelTokenForm from '@/components/CancelTokenForm';
@@ -34,6 +34,7 @@ export default async function ManageBookingPage(props: Props) {
   const host = booking.service.user;
   const tz = booking.visitorTz && isValidTimeZone(booking.visitorTz) ? booking.visitorTz : host.timezone;
   const cancelled = booking.status === 'CANCELLED';
+  const past = new Date(booking.startsAt).getTime() <= Date.now();
   const when = formatRange(new Date(booking.startsAt), new Date(booking.endsAt), tz);
 
   return (
@@ -76,6 +77,15 @@ export default async function ManageBookingPage(props: Props) {
             </p>
           )}
 
+          {past ? (
+            <p className="mt-6 text-[14px] text-ink-600">
+              Ce rendez-vous est passé : il ne peut plus être modifié.{' '}
+              <Link href={`/b/${host.slug}`} className="font-semibold text-ink-900 underline">
+                Réserver un nouveau créneau
+              </Link>
+            </p>
+          ) : (
+          <>
           <div className="mt-6 flex flex-wrap gap-3">
             <Link href={`/b/${host.slug}?token=${token}`} className="btn-primary" style={{ background: host.brandColor }}>
               Reprogrammer
@@ -83,8 +93,10 @@ export default async function ManageBookingPage(props: Props) {
             <CancelTokenForm action={cancelByTokenAction} token={token} />
           </div>
           <p className="mt-4 text-[12px] text-ink-500">
-            Le créneau sera de nouveau réservé : {formatWall(new Date(booking.endsAt), tz, { hour: '2-digit', minute: '2-digit' })}
+            Annuler libère le créneau pour d’autres clients ; {host.name} est prévenu automatiquement.
           </p>
+          </>
+          )}
         </>
       )}
     </Wrapper>

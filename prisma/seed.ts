@@ -1,7 +1,6 @@
-import { PrismaClient } from '@prisma/client';
+import { db } from '../lib/db';
 import bcrypt from 'bcryptjs';
 
-const db = new PrismaClient();
 
 const HOST_TZ = 'Europe/Paris';
 

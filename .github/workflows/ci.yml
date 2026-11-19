@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: file:./ci.db
+      SESSION_SECRET: ci-secret-0123456789-0123456789-0123456789
+      APP_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Base de test + compte de démo
+        run: npm run setup
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Contrôles métier (créneaux, double réservation, annulation, devises…)
+        run: npx tsx scripts/check.ts
+      - name: Build de production
+        run: npm run build

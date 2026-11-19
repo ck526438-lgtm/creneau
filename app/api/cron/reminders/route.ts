@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { sendMail, reminderMail } from '@/lib/mail';
-import { locationText } from '@/lib/bookings';
+import { cancelUrl, locationText } from '@/lib/bookings';
 import { formatRange } from '@/lib/time';
 import { isValidTimeZone } from '@/lib/time';
 
@@ -11,6 +11,10 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   const secret = process.env.CRON_SECRET;
   const header = request.headers.get('authorization');
+  // En production, l'endpoint reste fermé tant que CRON_SECRET n'est pas défini.
+  if (!secret && process.env.NODE_ENV === 'production') {
+    return NextResponse.json({ error: 'CRON_SECRET non configuré' }, { status: 503 });
+  }
   if (secret && header !== `Bearer ${secret}`) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
@@ -41,6 +45,7 @@ export async function GET(request: NextRequest) {
         when: formatRange(booking.startsAt, booking.endsAt, tz),
         location: locationText(booking.service, booking.user),
         hostName: booking.user.name,
+        manageUrl: cancelUrl(booking.cancelToken),
       }),
     });
     if (ok) {

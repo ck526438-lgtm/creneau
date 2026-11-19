@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useEffect, useState } from 'react';
 import type { AuthState } from '@/actions/auth';
 
 export default function AuthForm({
@@ -15,6 +15,15 @@ export default function AuthForm({
   next?: string;
 }) {
   const [state, formAction, pending] = useActionState(action, {});
+  const [timezone, setTimezone] = useState('');
+
+  useEffect(() => {
+    try {
+      setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone ?? '');
+    } catch {
+      /* fuseau par défaut côté serveur */
+    }
+  }, []);
 
   return (
     <form action={formAction} className="space-y-4">
@@ -23,7 +32,7 @@ export default function AuthForm({
           <label className="label" htmlFor="name">
             Votre nom
           </label>
-          <input id="name" name="name" className="field" placeholder="Camille Dubois" required />
+          <input id="name" name="name" className="field" placeholder="Awa Koné" required />
         </div>
       )}
       <div>
@@ -56,6 +65,7 @@ export default function AuthForm({
         />
       </div>
       {mode === 'login' && next && <input type="hidden" name="next" value={next} />}
+      {mode === 'signup' && <input type="hidden" name="timezone" value={timezone} />}
       {state.error && (
         <p className="rounded-xl bg-rose-50 px-3.5 py-2.5 text-[14px] text-rose-700">{state.error}</p>
       )}

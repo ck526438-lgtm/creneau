@@ -3,7 +3,15 @@
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { saveServiceAction, type SaveState } from '@/actions/config';
-import { DURATIONS, LOCATION_KINDS, SERVICE_COLORS, type LocationKindValue } from '@/lib/constants';
+import {
+  CURRENCIES,
+  DURATIONS,
+  LOCATION_KINDS,
+  SERVICE_COLORS,
+  parsePrice,
+  priceLabel,
+  type LocationKindValue,
+} from '@/lib/constants';
 
 export type ServiceDraft = {
   id?: string;
@@ -16,6 +24,8 @@ export type ServiceDraft = {
   locationValue: string;
   active: boolean;
   colorIndex: number;
+  /** montant saisi tel quel (« 15000 », « 49,90 ») ; vide = gratuit */
+  price: string;
 };
 
 export const EMPTY_SERVICE: ServiceDraft = {
@@ -28,9 +38,10 @@ export const EMPTY_SERVICE: ServiceDraft = {
   locationValue: '',
   active: true,
   colorIndex: 0,
+  price: '',
 };
 
-export default function ServiceForm({ initial }: { initial: ServiceDraft }) {
+export default function ServiceForm({ initial, currency }: { initial: ServiceDraft; currency: string }) {
   const [draft, setDraft] = useState<ServiceDraft>(initial);
   const [state, setState] = useState<SaveState>({});
   const [pending, startTransition] = useTransition();
@@ -38,6 +49,10 @@ export default function ServiceForm({ initial }: { initial: ServiceDraft }) {
 
   const set = <K extends keyof ServiceDraft>(key: K, value: ServiceDraft[K]) =>
     setDraft((d) => ({ ...d, [key]: value }));
+
+  const currencyCode = CURRENCIES.find((c) => c.code === currency)?.code ?? 'EUR';
+  const cents = parsePrice(draft.price);
+  const pricePreview = Number.isNaN(cents) ? 'Montant illisible' : priceLabel(cents, currencyCode);
 
   const kindHint = LOCATION_KINDS.find((k) => k.value === draft.locationKind)?.hint ?? '';
 
@@ -119,6 +134,26 @@ export default function ServiceForm({ initial }: { initial: ServiceDraft }) {
                 </option>
               ))}
             </select>
+          </div>
+        </div>
+
+        <div className="grid gap-5 sm:grid-cols-2">
+          <div>
+            <label className="label" htmlFor="price">
+              Prix affiché ({currencyCode === 'XOF' || currencyCode === 'XAF' ? 'FCFA' : currencyCode})
+            </label>
+            <input
+              id="price"
+              className="field"
+              inputMode="decimal"
+              value={draft.price}
+              onChange={(e) => set('price', e.target.value)}
+              placeholder="Laisser vide si gratuit"
+            />
+            <p className={`mt-1.5 text-[12px] ${Number.isNaN(cents) ? 'text-rose-600' : 'text-ink-500'}`}>
+              Affiché au client : {pricePreview}. Le paiement se fait hors ligne (sur place, Mobile Money,
+              virement…). Devise modifiable dans Réglages.
+            </p>
           </div>
         </div>
 

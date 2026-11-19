@@ -15,6 +15,10 @@ jobs:
           APP_URL: ${{ vars.APP_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
+          if [ -z "$APP_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "APP_URL ou CRON_SECRET non configuré : rien à faire (voir README, section Rappels J-1)."
+            exit 0
+          fi
           response="$(curl -sS -o /tmp/body -w '%{http_code}' \
             -H "Authorization: Bearer $CRON_SECRET" "$APP_URL/api/cron/reminders")"
           echo "HTTP $response : $(cat /tmp/body)"

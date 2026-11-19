@@ -1,6 +1,12 @@
 import { db } from './db';
 import { generateSlots } from './slots';
-import { sendMail, bookingConfirmationMail, hostNotificationMail, cancellationMail, escapeHtml } from './mail';
+import {
+  sendMail,
+  bookingConfirmationMail,
+  hostNotificationMail,
+  hostRescheduleMail,
+  cancellationMail,
+} from './mail';
 import { buildIcs } from './ics';
 import { formatRange, isValidTimeZone } from './time';
 import { locationLabel } from './constants';
@@ -11,6 +17,29 @@ export type HostBundle = {
   service: Service & { user: User };
   rules: { weekday: number; startMin: number; endMin: number }[];
 };
+
+/**
+ * Verrou par hôte : la vérification « créneau libre » et l'écriture de la réservation s'exécutent
+ * l'une après l'autre pour un même agenda. SQLite impose une seule instance du serveur, donc un
+ * verrou en mémoire suffit à empêcher deux clients simultanés de prendre le même créneau.
+ */
+const hostLocks = new Map<string, Promise<unknown>>();
+
+export async function withHostLock<T>(hostId: string, task: () => Promise<T>): Promise<T> {
+  const previous = hostLocks.get(hostId) ?? Promise.resolve();
+  const run = previous.then(task, task);
+  const tail = run.catch(() => undefined);
+  hostLocks.set(hostId, tail);
+  try {
+    return await run;
+  } finally {
+    if (hostLocks.get(hostId) === tail) hostLocks.delete(hostId);
+  }
+}
+
+export function visitorZone(booking: Pick<Booking, 'visitorTz'>, host: Pick<User, 'timezone'>) {
+  return booking.visitorTz && isValidTimeZone(booking.visitorTz) ? booking.visitorTz : host.timezone;
+}
 
 export async function loadService(serviceId: string): Promise<HostBundle | null> {
   const service = await db.service.findUnique({ where: { id: serviceId }, include: { user: true } });
@@ -61,6 +90,8 @@ async function conflictFree(
     rules: bundle.rules,
     bookings: relevantBookings,
     busy,
+    minNoticeMin: bundle.user.minNoticeMin,
+    daysAhead: bundle.user.maxDaysAhead,
   });
   for (const list of map.values()) {
     if (list.some((s) => s.startsAt.getTime() === startsAt.getTime())) return true;
@@ -85,11 +116,13 @@ export async function createBooking(input: {
   const startsAt = new Date(input.startsAt);
   if (Number.isNaN(startsAt.getTime())) return { ok: false, error: 'Créneau invalide.' };
 
-  if (!(await conflictFree(bundle, startsAt))) {
-    return { ok: false, error: 'Ce créneau vient tout juste d’être réservé. Choisissez-en un autre.' };
+  if (bundle.user.requirePhone && !(input.visitorPhone ?? '').trim()) {
+    return { ok: false, error: 'Le numéro de téléphone est obligatoire pour ce rendez-vous.' };
   }
 
-  const booking = await db.booking.create({
+  const created = await withHostLock(bundle.user.id, async () => {
+    if (!(await conflictFree(bundle, startsAt))) return null;
+    return db.booking.create({
     data: {
       userId: bundle.user.id,
       serviceId: bundle.service.id,
@@ -102,10 +135,14 @@ export async function createBooking(input: {
       endsAt: new Date(startsAt.getTime() + bundle.service.durationMin * 60_000),
       status: 'CONFIRMED',
     },
+    });
   });
+  if (!created) {
+    return { ok: false, error: 'Ce créneau vient tout juste d’être réservé. Choisissez-en un autre.' };
+  }
 
-  await notifyBookingCreated(booking, bundle);
-  return { ok: true, booking };
+  await notifyBookingCreated(created, bundle);
+  return { ok: true, booking: created };
 }
 
 export async function rescheduleBooking(
@@ -116,41 +153,50 @@ export async function rescheduleBooking(
   if (!existing || existing.status === 'CANCELLED') {
     return { ok: false, error: 'Ce rendez-vous n’est plus modifiable.' };
   }
+  if (existing.startsAt.getTime() <= Date.now()) {
+    return { ok: false, error: 'Ce rendez-vous est déjà passé.' };
+  }
   const bundle = await loadService(existing.serviceId);
   if (!bundle) return { ok: false, error: 'Prestation introuvable.' };
 
   const startsAt = new Date(startsAtIso);
   if (Number.isNaN(startsAt.getTime())) return { ok: false, error: 'Créneau invalide.' };
-  if (!(await conflictFree(bundle, startsAt, bookingId))) {
-    return { ok: false, error: 'Ce créneau n’est plus disponible.' };
-  }
 
-  const booking = await db.booking.update({
-    where: { id: bookingId },
-    data: {
-      startsAt,
-      endsAt: new Date(startsAt.getTime() + bundle.service.durationMin * 60_000),
-      remindSentAt: null,
-    },
+  const booking = await withHostLock(bundle.user.id, async () => {
+    if (!(await conflictFree(bundle, startsAt, bookingId))) return null;
+    return db.booking.update({
+      where: { id: bookingId },
+      data: {
+        startsAt,
+        endsAt: new Date(startsAt.getTime() + bundle.service.durationMin * 60_000),
+        remindSentAt: null,
+      },
+    });
   });
+  if (!booking) return { ok: false, error: 'Ce créneau n’est plus disponible.' };
 
-  const visitorTz =
-    booking.visitorTz && isValidTimeZone(booking.visitorTz) ? booking.visitorTz : bundle.user.timezone;
-  const when = formatRange(booking.startsAt, booking.endsAt, visitorTz);
+  const when = formatRange(booking.startsAt, booking.endsAt, visitorZone(booking, bundle.user));
+  const mail = bookingConfirmationMail({
+    hostName: bundle.user.name,
+    brandColor: bundle.user.brandColor,
+    serviceTitle: bundle.service.title,
+    when,
+    location: locationText(bundle.service, bundle.user),
+    visitorName: booking.visitorName,
+    notes: booking.visitorNotes,
+    cancelUrl: cancelUrl(booking.cancelToken),
+    icsUrl: `${appUrl()}/api/ics/${booking.id}`,
+  });
+  await sendMail({ to: booking.visitorEmail, subject: `RDV reprogrammé : ${bundle.service.title}`, html: mail.html });
   await sendMail({
-    to: booking.visitorEmail,
-    subject: `RDV reprogrammé : ${bundle.service.title}`,
-    html: bookingConfirmationMail({
-      hostName: bundle.user.name,
+    to: bundle.user.email,
+    ...hostRescheduleMail({
       brandColor: bundle.user.brandColor,
-      serviceTitle: bundle.service.title,
-      when,
-      location: locationText(bundle.service, bundle.user),
       visitorName: booking.visitorName,
-      notes: booking.visitorNotes,
-      cancelUrl: cancelUrl(booking.cancelToken),
-      icsUrl: `${appUrl()}/api/ics/${booking.id}`,
-    }).html,
+      serviceTitle: bundle.service.title,
+      before: formatRange(existing.startsAt, existing.endsAt, bundle.user.timezone),
+      after: formatRange(booking.startsAt, booking.endsAt, bundle.user.timezone),
+    }),
   });
   return { ok: true, booking };
 }
@@ -164,9 +210,7 @@ export function appUrl() {
 }
 
 export async function notifyBookingCreated(booking: Booking, bundle: HostBundle) {
-  const visitorTz =
-    booking.visitorTz && isValidTimeZone(booking.visitorTz) ? booking.visitorTz : bundle.user.timezone;
-  const when = formatRange(booking.startsAt, booking.endsAt, visitorTz);
+  const when = formatRange(booking.startsAt, booking.endsAt, visitorZone(booking, bundle.user));
   const hostView = formatRange(booking.startsAt, booking.endsAt, bundle.user.timezone);
   const location = locationText(bundle.service, bundle.user);
 
@@ -207,28 +251,38 @@ export async function cancelBookingByToken(token: string, reason: 'visitor' | 'h
   });
   if (!booking) return { ok: false as const, error: 'Rendez-vous introuvable ou déjà annulé.' };
   if (booking.status === 'CANCELLED') return { ok: true as const, already: true };
+  if (reason === 'visitor' && booking.startsAt.getTime() <= Date.now()) {
+    return { ok: false as const, error: 'Ce rendez-vous est déjà passé.' };
+  }
 
   await db.booking.update({ where: { id: booking.id }, data: { status: 'CANCELLED' } });
 
   const user = booking.service.user;
-  const when = formatRange(booking.startsAt, booking.endsAt, user.timezone);
-  const target = reason === 'visitor' ? user.email : booking.visitorEmail;
+  const cancelledBy = reason === 'visitor' ? booking.visitorName : user.name;
 
+  // Un seul email par personne, chacun dans son propre fuseau.
   await sendMail({
-    to: target,
+    to: booking.visitorEmail,
     ...cancellationMail({
       brandColor: user.brandColor,
-      visitorName: reason === 'visitor' ? user.name : booking.visitorName,
+      greeting: booking.visitorName,
       serviceTitle: booking.service.title,
-      when,
+      when: formatRange(booking.startsAt, booking.endsAt, visitorZone(booking, user)),
       hostName: user.name,
+      cancelledBy,
+      rebookUrl: `${appUrl()}/b/${user.slug}`,
     }),
   });
-
   await sendMail({
-    to: reason === 'visitor' ? booking.visitorEmail : user.email,
-    subject: `RDV annulé : ${booking.service.title}`,
-    html: `<p>Le rendez-vous <strong>${escapeHtml(booking.service.title)}</strong> du <strong>${escapeHtml(when)}</strong> a été annulé.</p>`,
+    to: user.email,
+    ...cancellationMail({
+      brandColor: user.brandColor,
+      greeting: user.name,
+      serviceTitle: `${booking.service.title} — ${booking.visitorName}`,
+      when: formatRange(booking.startsAt, booking.endsAt, user.timezone),
+      hostName: user.name,
+      cancelledBy: reason === 'visitor' ? booking.visitorName : 'vous',
+    }),
   });
 
   return { ok: true as const };

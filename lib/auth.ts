@@ -23,8 +23,8 @@ export function verifyPassword(password: string, hash: string) {
   return bcrypt.compare(password, hash);
 }
 
-export async function createSession(userId: string) {
-  const token = await new SignJWT({ sub: userId })
+export async function createSession(userId: string, version = 0) {
+  const token = await new SignJWT({ sub: userId, v: version })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime(`${MAX_AGE_DAYS}d`)
@@ -45,21 +45,32 @@ export async function destroySession() {
   store.delete(COOKIE_NAME);
 }
 
-export async function sessionUserId() {
+async function sessionClaims() {
   const token = (await cookies()).get(COOKIE_NAME)?.value;
   if (!token) return null;
   try {
     const { payload } = await jwtVerify(token, secretKey());
-    return typeof payload.sub === 'string' ? payload.sub : null;
+    if (typeof payload.sub !== 'string') return null;
+    return { id: payload.sub, version: typeof payload.v === 'number' ? payload.v : 0 };
   } catch {
     return null;
   }
 }
 
+export async function sessionUserId() {
+  return (await sessionClaims())?.id ?? null;
+}
+
+/**
+ * Utilisateur connecté. Une session émise avant le dernier changement de mot de passe
+ * (sessionVersion plus ancienne) est refusée : changer de mot de passe déconnecte les autres appareils.
+ */
 export async function currentUser() {
-  const id = await sessionUserId();
-  if (!id) return null;
-  return db.user.findUnique({ where: { id } });
+  const claims = await sessionClaims();
+  if (!claims) return null;
+  const user = await db.user.findUnique({ where: { id: claims.id } });
+  if (!user || user.sessionVersion !== claims.version) return null;
+  return user;
 }
 
 export async function requireUser() {

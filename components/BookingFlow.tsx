@@ -20,7 +20,15 @@ type Service = {
 type Slot = { startsAt: string; endsAt: string };
 
 type Props = {
-  host: { name: string; headline: string; bio: string; brandColor: string; timezone: string };
+  host: {
+    name: string;
+    headline: string;
+    bio: string;
+    brandColor: string;
+    timezone: string;
+    currency: string;
+    requirePhone: boolean;
+  };
   services: Service[];
   locked: { token: string; serviceId: string; startsAt: string } | null;
 };
@@ -85,6 +93,11 @@ export default function BookingFlow({ host, services, locked }: Props) {
         setSlots(data.slots);
         const first = data.slots[0];
         setSelectedDay(first ? dayKey(new Date(first.startsAt), visitorTz) : null);
+        // Si le premier créneau libre est loin, afficher directement la quinzaine qui le contient.
+        if (first) {
+          const daysAway = Math.floor((new Date(first.startsAt).getTime() - Date.now()) / 86_400_000);
+          setWeekOffset(Math.max(0, Math.floor(daysAway / 14)));
+        }
       })
       .catch(() => !cancelled && setLoadError('Impossible de charger les créneaux. Réessayez.'));
     return () => {
@@ -121,6 +134,10 @@ export default function BookingFlow({ host, services, locked }: Props) {
     if (!service || !selectedSlot) return;
     if (!form.name.trim() || !form.email.trim()) {
       setSubmitError('Nom et email sont nécessaires.');
+      return;
+    }
+    if (host.requirePhone && !form.phone.trim()) {
+      setSubmitError('Le numéro de téléphone est nécessaire pour ce rendez-vous.');
       return;
     }
     setSubmitting(true);
@@ -226,7 +243,7 @@ export default function BookingFlow({ host, services, locked }: Props) {
                 <span className="mt-2 block text-[12px] font-medium text-ink-500">
                   {s.durationMin} min · {s.locationLabel}
                   {s.locationValue ? ` · ${s.locationValue}` : ''}
-                  {s.priceCents > 0 ? ` · ${priceLabel(s.priceCents)}` : ''}
+                  {s.priceCents > 0 ? ` · ${priceLabel(s.priceCents, host.currency)}` : ''}
                 </span>
               </span>
               <span className="shrink-0 self-center text-ink-400">→</span>
@@ -349,17 +366,19 @@ export default function BookingFlow({ host, services, locked }: Props) {
             <p className="mt-1 text-[13px] text-ink-500">
               {service.durationMin} min · {service.locationLabel}
               {service.locationValue ? ` · ${service.locationValue}` : ''}
+              {service.priceCents > 0 ? ` · ${priceLabel(service.priceCents, host.currency)}` : ''}
             </p>
           </div>
           <div className="space-y-4">
             <div>
               <label className="label">Nom complet *</label>
-              <input className="field" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+              <input autoComplete="name" className="field" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </div>
             <div>
               <label className="label">Email *</label>
               <input
                 type="email"
+                autoComplete="email"
                 className="field"
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
@@ -367,8 +386,15 @@ export default function BookingFlow({ host, services, locked }: Props) {
               />
             </div>
             <div>
-              <label className="label">Téléphone</label>
-              <input className="field" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+              <label className="label">Téléphone{host.requirePhone ? ' *' : ''}</label>
+              <input
+                type="tel"
+                autoComplete="tel"
+                className="field"
+                value={form.phone}
+                onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                placeholder="+225 07 00 00 00 00"
+              />
             </div>
             <div>
               <label className="label">Motif, précisions</label>

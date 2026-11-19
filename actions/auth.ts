@@ -4,7 +4,8 @@ import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { redirect } from 'next/navigation';
 import { db } from '@/lib/db';
-import { createSession, destroySession, hashPassword, verifyPassword } from '@/lib/auth';
+import { createSession, currentUser, destroySession, hashPassword, verifyPassword } from '@/lib/auth';
+import { isValidTimeZone } from '@/lib/time';
 import { slugify } from '@/lib/constants';
 import { appUrl } from '@/lib/bookings';
 import { passwordResetMail, sendMail } from '@/lib/mail';
@@ -51,9 +52,15 @@ export async function signupAction(_prev: AuthState, formData: FormData): Promis
     return { error: 'Trop de comptes créés depuis votre connexion. Réessayez plus tard.' };
   }
 
+  const tzInput = String(formData.get('timezone') ?? '');
+  const timezone = isValidTimeZone(tzInput) ? tzInput : 'Europe/Paris';
+  const currency = defaultCurrency(timezone);
+
   const user = await db.user.create({
     data: {
       name: parsed.data.name,
+      timezone,
+      currency,
       email: parsed.data.email,
       passwordHash: await hashPassword(parsed.data.password),
       slug: await uniqueSlug(parsed.data.name),
@@ -96,7 +103,7 @@ export async function loginAction(_prev: AuthState, formData: FormData): Promise
     return { error: 'Email ou mot de passe incorrect.' };
   }
 
-  await createSession(user.id);
+  await createSession(user.id, user.sessionVersion);
   const next = String(formData.get('next') ?? '');
   redirect(next.startsWith('/dashboard') ? next : '/dashboard');
 }
@@ -154,11 +161,57 @@ export async function resetPasswordAction(_prev: AuthState, formData: FormData):
   }
 
   const passwordHash = await hashPassword(parsed.data.password);
-  await db.$transaction([
-    db.user.update({ where: { id: record.userId }, data: { passwordHash } }),
+  const [updated] = await db.$transaction([
+    db.user.update({
+      where: { id: record.userId },
+      data: { passwordHash, sessionVersion: { increment: 1 } },
+    }),
     db.passwordReset.update({ where: { id: record.id }, data: { usedAt: new Date() } }),
   ]);
 
-  await createSession(record.userId);
+  await createSession(updated.id, updated.sessionVersion);
   redirect('/dashboard');
+}
+
+/** Devise proposée par défaut selon le fuseau détecté à l'inscription (modifiable dans Réglages). */
+function defaultCurrency(timezone: string) {
+  const XOF = ['Abidjan', 'Dakar', 'Bamako', 'Ouagadougou', 'Porto-Novo', 'Lome', 'Niamey', 'Bissau'];
+  const XAF = ['Douala', 'Libreville', 'Brazzaville', 'Ndjamena', 'Bangui', 'Malabo'];
+  const city = timezone.split('/')[1] ?? '';
+  if (XOF.includes(city)) return 'XOF';
+  if (XAF.includes(city)) return 'XAF';
+  if (city === 'Casablanca') return 'MAD';
+  if (city === 'Tunis') return 'TND';
+  if (city === 'Algiers') return 'DZD';
+  if (city === 'Conakry') return 'GNF';
+  if (city === 'Kinshasa' || city === 'Lubumbashi') return 'CDF';
+  if (city === 'Zurich') return 'CHF';
+  if (timezone.startsWith('America/') && ['Montreal', 'Toronto', 'Vancouver', 'Halifax', 'Winnipeg', 'Edmonton'].includes(city)) return 'CAD';
+  return 'EUR';
+}
+
+export type PasswordState = { error?: string; ok?: boolean };
+
+export async function changePasswordAction(_prev: PasswordState, formData: FormData): Promise<PasswordState> {
+  const user = await currentUser();
+  if (!user) return { error: 'Session expirée, reconnectez-vous.' };
+
+  const ip = await clientIp();
+  if (tooMuch(`password:${user.id}:${ip}`, 6, 15 * 60_000)) {
+    return { error: 'Trop de tentatives. Réessayez dans 15 minutes.' };
+  }
+
+  const current = String(formData.get('current') ?? '');
+  const next = String(formData.get('next') ?? '');
+  if (!(await verifyPassword(current, user.passwordHash))) return { error: 'Mot de passe actuel incorrect.' };
+  if (next.length < 8) return { error: 'Nouveau mot de passe : 8 caractères minimum.' };
+  if (next === current) return { error: 'Choisissez un mot de passe différent de l’actuel.' };
+
+  const updated = await db.user.update({
+    where: { id: user.id },
+    data: { passwordHash: await hashPassword(next), sessionVersion: { increment: 1 } },
+  });
+  // Les autres appareils sont déconnectés ; cet appareil reçoit une session neuve.
+  await createSession(updated.id, updated.sessionVersion);
+  return { ok: true };
 }
